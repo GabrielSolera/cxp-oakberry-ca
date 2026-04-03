@@ -10,46 +10,120 @@
 
   <!-- HEADER -->
   <div class="header">
-    <h1>CXP Centroamérica</h1>
-    <button class="btn-primary" onclick="abrirModalFactura()">+ Nueva factura</button>
+    <div class="header-left">
+      <div class="header-title">CXP Centroamérica</div>
+      <div class="header-subtitle">Cuentas por Pagar — Oakberry Latam</div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" onclick="verReporte()">Ver reporte</button>
+      <button class="btn-granola" onclick="abrirModalFactura()">+ Nueva factura</button>
+    </div>
   </div>
 
   <!-- KPIs -->
-  <div id="kpis" class="kpi-grid"></div>
+  <div class="kpi-section">
+    <div class="kpi-tabs" id="kpi-tabs"></div>
+    <div class="kpi-grid" id="kpis"></div>
+  </div>
 
-  <!-- FILTROS -->
-  <div class="filtros-card">
-    <div class="filtros-grid">
-      <select id="f-pais" onchange="aplicarFiltros()">
-        <option value="">Todos los países</option>
-      </select>
-      <select id="f-proveedor" onchange="aplicarFiltros()">
-        <option value="">Todos los proveedores</option>
-      </select>
-      <select id="f-moneda" onchange="aplicarFiltros()">
-        <option value="">Todas las monedas</option>
-        <option value="USD">USD</option>
-        <option value="CRC">CRC</option>
-        <option value="PAB">PAB</option>
-      </select>
-      <input type="date" id="f-desde" onchange="aplicarFiltros()" placeholder="Desde">
-      <input type="date" id="f-hasta" onchange="aplicarFiltros()" placeholder="Hasta">
-      <button class="btn-secondary" onclick="limpiarFiltros()">Limpiar</button>
+  <!-- CONTENIDO PRINCIPAL -->
+  <div class="main-content">
+
+    <!-- PANEL IZQUIERDO -->
+    <div class="left-panel">
+
+      <!-- FILTROS -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Filtros</span>
+          <button class="btn-secondary" style="padding:4px 10px;font-size:11px" onclick="limpiarFiltros()">Limpiar</button>
+        </div>
+        <div class="card-body">
+          <div class="filtros-grid">
+            <div class="filter-group">
+              <label class="filter-label">País</label>
+              <select id="f-pais" onchange="aplicarFiltros()"><option value="">Todos</option></select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Proveedor</label>
+              <select id="f-proveedor" onchange="aplicarFiltros()"><option value="">Todos</option></select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Moneda</label>
+              <select id="f-moneda" onchange="aplicarFiltros();actualizarKPIs()">
+                <option value="">Todas</option>
+                <option value="USD">USD</option>
+                <option value="CRC">CRC</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Estado</label>
+              <select id="f-estado" onchange="aplicarFiltros()">
+                <option value="">Todos</option>
+                <option value="Pendiente">Pendiente</option>
+                <option value="Vencida">Vencida</option>
+                <option value="Parcial">Parcial</option>
+                <option value="Pagada">Pagada</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Desde</label>
+              <input type="date" id="f-desde" onchange="aplicarFiltros()">
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Hasta</label>
+              <input type="date" id="f-hasta" onchange="aplicarFiltros()">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLA -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Facturas</span>
+          <span id="tabla-count" style="font-size:11px;color:#999"></span>
+        </div>
+        <div id="tabla-container">
+          <p class="loading">Cargando facturas...</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PANEL DERECHO -->
+    <div class="right-panel">
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Distribución</span></div>
+        <div class="chart-wrap">
+          <canvas id="donaChart" width="180" height="180"></canvas>
+          <div class="legend" id="chartLegend"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Próximos vencimientos</span></div>
+        <div class="card-body" style="padding:10px 14px">
+          <div id="resumen-vencimientos" class="resumen-list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Top deuda por proveedor</span></div>
+        <div class="card-body" style="padding:10px 14px">
+          <div id="top-proveedores" class="resumen-list"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <!-- TABLA -->
-  <div class="tabla-card">
-    <div id="tabla-container">
-      <p class="loading">Cargando facturas...</p>
-    </div>
-  </div>
-
-  <!-- MODAL NUEVA FACTURA -->
+  <!-- MODAL NUEVA / EDITAR FACTURA -->
   <div id="modal-factura" class="modal-overlay" style="display:none">
     <div class="modal">
       <div class="modal-header">
-        <h2>Nueva factura</h2>
+        <h2 id="modal-factura-titulo">Nueva factura</h2>
         <button onclick="cerrarModal('modal-factura')">✕</button>
       </div>
       <div class="modal-body">
@@ -67,7 +141,6 @@
             <select id="nf-moneda">
               <option value="USD">USD</option>
               <option value="CRC">CRC</option>
-              <option value="PAB">PAB</option>
             </select>
           </div>
           <div class="form-group">
@@ -83,20 +156,42 @@
             <input type="date" id="nf-vence">
           </div>
           <div class="form-group full">
+            <label>Número de factura</label>
+            <input type="text" id="nf-numero" placeholder="Ej: 001-002-0000123456">
+          </div>
+          <div class="form-group full">
             <label>Notas</label>
             <input type="text" id="nf-notas" placeholder="Opcional">
           </div>
+        </div>
+        <div id="nf-justificacion-wrap" class="justificacion-box" style="display:none">
+          <label>Justificación del cambio (requerido)</label>
+          <textarea id="nf-justificacion" placeholder="Explicá el motivo de la edición..."></textarea>
         </div>
         <div id="nf-error" class="error-msg" style="display:none"></div>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" onclick="cerrarModal('modal-factura')">Cancelar</button>
-        <button class="btn-primary" onclick="guardarFactura()">Guardar</button>
+        <button class="btn-primary" id="btn-guardar-factura" onclick="guardarFactura()">Guardar factura</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL REGISTRAR PAGO -->
+  <!-- MODAL DETALLE FACTURA -->
+  <div id="modal-detalle" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:700px;max-width:95vw">
+      <div class="modal-header">
+        <h2 id="detalle-titulo">Detalle de factura</h2>
+        <button onclick="cerrarModal('modal-detalle')">✕</button>
+      </div>
+      <div class="modal-body" id="detalle-body" style="max-height:75vh;overflow-y:auto;padding:0"></div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-detalle')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL PAGO -->
   <div id="modal-pago" class="modal-overlay" style="display:none">
     <div class="modal">
       <div class="modal-header">
@@ -104,7 +199,7 @@
         <button onclick="cerrarModal('modal-pago')">✕</button>
       </div>
       <div class="modal-body">
-        <p id="pago-info" style="margin-bottom:16px;color:#666"></p>
+        <p id="pago-info" style="margin-bottom:16px;color:#7D5596;font-weight:500;font-size:13px"></p>
         <div class="form-grid">
           <div class="form-group">
             <label>Monto a pagar</label>
@@ -119,6 +214,173 @@
       <div class="modal-footer">
         <button class="btn-secondary" onclick="cerrarModal('modal-pago')">Cancelar</button>
         <button class="btn-primary" onclick="confirmarPago()">Confirmar pago</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL EDITAR PAGO -->
+  <div id="modal-editar-pago" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header" style="background:linear-gradient(135deg,#0F6E56,#46C3AF)">
+        <h2>Editar pago</h2>
+        <button onclick="cerrarModal('modal-editar-pago')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="editar-pago-info" style="margin-bottom:16px;color:#7D5596;font-weight:500;font-size:13px"></p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Nuevo monto</label>
+            <input type="number" id="ep-monto" placeholder="0.00" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Nueva fecha</label>
+            <input type="date" id="ep-fecha">
+          </div>
+        </div>
+        <div class="justificacion-box">
+          <label>Justificación (requerido)</label>
+          <textarea id="ep-justificacion" placeholder="Explicá el motivo del cambio..."></textarea>
+        </div>
+        <div id="ep-error" class="error-msg" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-editar-pago')">Cancelar</button>
+        <button style="background:#46C3AF;color:white;border:none;padding:9px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600" onclick="confirmarEditarPago()">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ELIMINAR -->
+  <div id="modal-eliminar" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:420px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#a0001a,#FF4B5F)">
+        <h2>Eliminar factura</h2>
+        <button onclick="cerrarModal('modal-eliminar')">✕</button>
+      </div>
+      <div class="modal-body" style="text-align:center;padding:28px">
+        <div style="font-size:36px;margin-bottom:12px">⚠️</div>
+        <p style="font-size:15px;font-weight:600;color:#2C1A3E;margin-bottom:8px">¿Eliminar esta factura?</p>
+        <p id="eliminar-info" style="font-size:13px;color:#666;margin-bottom:0"></p>
+      </div>
+      <div class="modal-footer" style="justify-content:center;gap:16px">
+        <button class="btn-secondary" onclick="cerrarModal('modal-eliminar')">Cancelar</button>
+        <button style="background:#FF4B5F;color:white;border:none;padding:9px 24px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600" onclick="confirmarEliminar()">Sí, eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DOCUMENTO FACTURA -->
+  <div id="modal-documento" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:500px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#854F0B,#EAA55E)">
+        <h2>Documento de factura</h2>
+        <button onclick="cerrarModal('modal-documento')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:#7D5596;font-weight:600;margin-bottom:14px">Factura: <span id="doc-factura-id" style="color:#4A1F60"></span></p>
+        <div id="doc-actual-wrap" style="display:none;margin-bottom:16px">
+          <div style="font-size:11px;color:#7D5596;font-weight:600;text-transform:uppercase;margin-bottom:8px">Documento actual</div>
+          <div style="display:flex;gap:10px;align-items:center;background:#faf7fd;padding:12px;border-radius:8px;border:1px solid #e8d8f8">
+            <div style="flex:1;font-size:13px;color:#4A1F60;font-weight:500" id="doc-actual-nombre">documento.pdf</div>
+            <a id="doc-actual-link" href="#" target="_blank"><button class="btn-sm" style="border-color:#5B94B7;color:#5B94B7">Ver</button></a>
+            <button class="btn-sm" style="border-color:#FF4B5F;color:#FF4B5F" onclick="eliminarDocumentoFactura()">Eliminar</button>
+          </div>
+        </div>
+        <div class="form-group full" style="margin-bottom:10px">
+          <label id="doc-upload-label">Subir nuevo documento</label>
+          <input type="file" id="doc-input" accept=".pdf,.jpg,.jpeg,.png" onchange="previewDocumento()" style="padding:10px;border:2px dashed #EAA55E;border-radius:8px;background:#fdf0e0;cursor:pointer">
+        </div>
+        <div id="doc-preview" style="margin-bottom:8px"></div>
+        <div style="font-size:11px;color:#999;margin-bottom:8px">Formatos: PDF, JPG, PNG · Máx. 5MB</div>
+        <div id="doc-error" class="error-msg" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-documento')">Cancelar</button>
+        <button class="btn-granola" id="btn-subir-doc" onclick="subirDocumento()">Subir documento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DOCUMENTO PAGO -->
+  <div id="modal-doc-pago" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:460px">
+      <div class="modal-header" style="background:linear-gradient(135deg,#0F6E56,#46C3AF)">
+        <h2>Comprobante de pago</h2>
+        <button onclick="cerrarModal('modal-doc-pago')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:#7D5596;font-weight:600;margin-bottom:14px">Pago: <span id="doc-pago-id" style="color:#4A1F60"></span></p>
+        <div class="form-group full" style="margin-bottom:10px">
+          <label>Seleccioná el comprobante</label>
+          <input type="file" id="doc-pago-input" accept=".pdf,.jpg,.jpeg,.png" onchange="previewDocumentoPago()" style="padding:10px;border:2px dashed #46C3AF;border-radius:8px;background:#d4f5ef;cursor:pointer">
+        </div>
+        <div id="doc-pago-preview" style="margin-bottom:8px"></div>
+        <div style="font-size:11px;color:#999;margin-bottom:8px">Formatos: PDF, JPG, PNG · Máx. 5MB</div>
+        <div id="doc-pago-error" class="error-msg" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-doc-pago')">Cancelar</button>
+        <button style="background:#46C3AF;color:white;border:none;padding:9px 18px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600" id="btn-subir-doc-pago" onclick="subirDocumentoPago()">Subir comprobante</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REPORTE -->
+  <div id="modal-reporte" class="modal-overlay" style="display:none">
+    <div class="modal" style="width:900px;max-width:96vw">
+      <div class="modal-header">
+        <h2>Reporte de cuentas por pagar</h2>
+        <button onclick="cerrarModal('modal-reporte')">✕</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <div class="reporte-filtros">
+          <div class="reporte-filtros-grid">
+            <div class="filter-group">
+              <label class="filter-label">Desde</label>
+              <input type="date" id="r-desde">
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Hasta</label>
+              <input type="date" id="r-hasta">
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">País</label>
+              <select id="r-pais"><option value="">Todos</option></select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Proveedor</label>
+              <select id="r-proveedor"><option value="">Todos</option></select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Moneda</label>
+              <select id="r-moneda">
+                <option value="">Todas</option>
+                <option value="USD">USD</option>
+                <option value="CRC">CRC</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Estado</label>
+              <select id="r-estado">
+                <option value="">Todos</option>
+                <option value="Pendiente">Pendiente</option>
+                <option value="Vencida">Vencida</option>
+                <option value="Parcial">Parcial</option>
+                <option value="Pagada">Pagada</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button class="btn-primary" onclick="generarReporte()" style="flex:1">Generar reporte</button>
+            <button class="btn-secondary" onclick="generarReporteMovimientos()" style="flex:1">Ver movimientos</button>
+          </div>
+        </div>
+        <div id="reporte-body" style="padding:16px 22px;max-height:60vh;overflow-y:auto">
+          <p style="color:#999;text-align:center;padding:30px">Configurá los filtros y presioná "Generar reporte"</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-reporte')">Cerrar</button>
       </div>
     </div>
   </div>
