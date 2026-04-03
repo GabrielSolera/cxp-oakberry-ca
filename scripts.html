@@ -1,34 +1,34 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
   let todasLasFacturas = [];
+  let resumenGlobal = {};
   let facturaSeleccionada = null;
+  let facturaEditando = null;
+  let pagoSeleccionado = null;
+  let facturaDetalleActual = null;
+  let donaChartInstance = null;
+  let monedaKPI = '';
 
-  // ------------------------------------------------------------
-  // Inicialización
-  // ------------------------------------------------------------
   document.addEventListener('DOMContentLoaded', () => {
     cargarSelects();
     cargarFacturas();
   });
 
   // ------------------------------------------------------------
-  // Carga inicial de datos
+  // Carga inicial
   // ------------------------------------------------------------
   function cargarSelects() {
     google.script.run.withSuccessHandler(paises => {
-      const sel = document.getElementById('f-pais');
-      const selNF = document.getElementById('nf-pais');
-      paises.forEach(p => {
-        sel.innerHTML   += `<option value="${p}">${p}</option>`;
-        selNF.innerHTML += `<option value="${p}">${p}</option>`;
+      ['f-pais', 'nf-pais', 'r-pais'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) paises.forEach(p => sel.innerHTML += '<option value="' + p + '">' + p + '</option>');
       });
     }).getPaises();
 
     google.script.run.withSuccessHandler(proveedores => {
-      const sel = document.getElementById('f-proveedor');
-      const selNF = document.getElementById('nf-proveedor');
-      proveedores.forEach(p => {
-        sel.innerHTML   += `<option value="${p.nombre}">${p.nombre}</option>`;
-        selNF.innerHTML += `<option value="${p.nombre}">${p.nombre}</option>`;
+      ['f-proveedor', 'nf-proveedor', 'r-proveedor'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) proveedores.forEach(p => sel.innerHTML += '<option value="' + p.nombre + '">' + p.nombre + '</option>');
       });
     }).getProveedores();
   }
@@ -38,82 +38,269 @@
     google.script.run.withSuccessHandler(facturas => {
       todasLasFacturas = facturas;
       renderTabla(facturas);
-      cargarKPIs();
+      renderSidebar(facturas);
     }).getFacturas(null);
-  }
 
-  function cargarKPIs() {
     google.script.run.withSuccessHandler(resumen => {
-      const kpis = document.getElementById('kpis');
-      kpis.innerHTML = '';
-      Object.entries(resumen).forEach(([moneda, data]) => {
-        kpis.innerHTML += `
-          <div class="kpi-card">
-            <div class="kpi-label">Total ${moneda}</div>
-            <div class="kpi-value">${formatMonto(data.total, moneda)}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Pendiente ${moneda}</div>
-            <div class="kpi-value warning">${formatMonto(data.pendiente, moneda)}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Vencido ${moneda}</div>
-            <div class="kpi-value danger">${formatMonto(data.vencido, moneda)}</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Pagado ${moneda}</div>
-            <div class="kpi-value success">${formatMonto(data.pagado, moneda)}</div>
-          </div>`;
-      });
+      resumenGlobal = resumen;
+      renderKPITabs(resumen);
+      renderKPIs(resumen, monedaKPI);
+      renderChart(resumen, monedaKPI);
     }).getResumen();
   }
 
   // ------------------------------------------------------------
-  // Render tabla
+  // KPIs con tabs por moneda
+  // ------------------------------------------------------------
+  function renderKPITabs(resumen) {
+    const tabs = document.getElementById('kpi-tabs');
+    tabs.innerHTML = '';
+    const monedas = Object.keys(resumen);
+
+    const btnTodas = document.createElement('button');
+    btnTodas.className = 'kpi-tab' + (monedaKPI === '' ? ' active' : '');
+    btnTodas.textContent = 'Todas';
+    btnTodas.onclick = () => { monedaKPI = ''; actualizarKPIs(); renderKPITabs(resumenGlobal); };
+    tabs.appendChild(btnTodas);
+
+    monedas.forEach(m => {
+      const btn = document.createElement('button');
+      btn.className = 'kpi-tab' + (monedaKPI === m ? ' active' : '');
+      btn.textContent = m;
+      btn.onclick = () => {
+        monedaKPI = m;
+        document.getElementById('f-moneda').value = m;
+        aplicarFiltros();
+        actualizarKPIs();
+        renderKPITabs(resumenGlobal);
+      };
+      tabs.appendChild(btn);
+    });
+  }
+
+  function actualizarKPIs() {
+    renderKPIs(resumenGlobal, monedaKPI);
+    renderChart(resumenGlobal, monedaKPI);
+  }
+
+  function renderKPIs(resumen, moneda) {
+    const kpis = document.getElementById('kpis');
+    kpis.innerHTML = '';
+
+    if (!moneda) {
+      kpis.innerHTML = '<div class="kpi-card"><div class="kpi-label">Total facturas</div><div class="kpi-value">' + todasLasFacturas.length + '</div><div class="kpi-sub">Seleccioná moneda para ver montos</div></div>';
+      const estados = { Pendiente: 0, Vencida: 0, Parcial: 0, Pagada: 0 };
+      todasLasFacturas.forEach(f => { if (estados[f.estado] !== undefined) estados[f.estado]++; });
+      kpis.innerHTML += '<div class="kpi-card warning"><div class="kpi-label">Pendientes</div><div class="kpi-value warning">' + estados.Pendiente + '</div><div class="kpi-sub">facturas</div></div>';
+      kpis.innerHTML += '<div class="kpi-card danger"><div class="kpi-label">Vencidas</div><div class="kpi-value danger">' + estados.Vencida + '</div><div class="kpi-sub">facturas</div></div>';
+      kpis.innerHTML += '<div class="kpi-card success"><div class="kpi-label">Pagadas</div><div class="kpi-value success">' + estados.Pagada + '</div><div class="kpi-sub">facturas</div></div>';
+      return;
+    }
+
+    const data = resumen[moneda] || { pendiente: 0, vencido: 0, pagado: 0, total: 0 };
+    kpis.innerHTML += '<div class="kpi-card"><div class="kpi-label">Total ' + moneda + '</div><div class="kpi-value">' + formatMonto(data.total, moneda) + '</div><div class="kpi-sub">Facturado</div></div>';
+    kpis.innerHTML += '<div class="kpi-card warning"><div class="kpi-label">Pendiente ' + moneda + '</div><div class="kpi-value warning">' + formatMonto(data.pendiente, moneda) + '</div><div class="kpi-sub">Por pagar</div></div>';
+    kpis.innerHTML += '<div class="kpi-card danger"><div class="kpi-label">Vencido ' + moneda + '</div><div class="kpi-value danger">' + formatMonto(data.vencido, moneda) + '</div><div class="kpi-sub">Atrasado</div></div>';
+    kpis.innerHTML += '<div class="kpi-card success"><div class="kpi-label">Pagado ' + moneda + '</div><div class="kpi-value success">' + formatMonto(data.pagado, moneda) + '</div><div class="kpi-sub">Completado</div></div>';
+  }
+
+  function renderChart(resumen, moneda) {
+    const m    = moneda || 'USD';
+    const data = resumen[m] || { pendiente: 0, vencido: 0, pagado: 0 };
+    const ctx  = document.getElementById('donaChart').getContext('2d');
+    if (donaChartInstance) donaChartInstance.destroy();
+    donaChartInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Pagado', 'Pendiente', 'Vencido'],
+        datasets: [{
+          data: [data.pagado, data.pendiente, data.vencido],
+          backgroundColor: ['#46C3AF', '#EAA55E', '#FF4B5F'],
+          borderWidth: 0, hoverOffset: 4
+        }]
+      },
+      options: {
+        cutout: '72%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ' ' + formatMonto(ctx.parsed, m) }}
+        }
+      }
+    });
+
+    const legend = document.getElementById('chartLegend');
+    legend.innerHTML = '';
+    [['Pagado','#46C3AF',data.pagado],['Pendiente','#EAA55E',data.pendiente],['Vencido','#FF4B5F',data.vencido]].forEach(([l,c,v]) => {
+      legend.innerHTML += '<div class="legend-item"><div class="legend-left"><div class="legend-dot" style="background:' + c + '"></div>' + l + ' (' + m + ')</div><div class="legend-val">' + formatMonto(v, m) + '</div></div>';
+    });
+  }
+
+  // ------------------------------------------------------------
+  // Sidebar
+  // ------------------------------------------------------------
+  function renderSidebar(facturas) {
+    const pendientes = facturas.filter(f => f.estado !== 'Pagada' && f.dias !== null).sort((a,b) => a.dias - b.dias).slice(0,6);
+    const venc = document.getElementById('resumen-vencimientos');
+    venc.innerHTML = '';
+    if (!pendientes.length) {
+      venc.innerHTML = '<p style="color:#999;font-size:12px;text-align:center;padding:10px">Sin vencimientos próximos</p>';
+    } else {
+      pendientes.forEach(f => {
+        const dc = f.dias < 0 ? 'dias-over' : f.dias <= 7 ? 'dias-warn' : 'dias-ok';
+        venc.innerHTML += '<div class="resumen-item"><div><div class="resumen-proveedor">' + f.proveedor + '</div><div class="resumen-fecha">' + f.fechaVence + ' · <span class="' + dc + '">' + getDiasLabel(f.dias) + '</span></div></div><div class="resumen-monto">' + formatMonto(f.saldo, f.moneda) + '</div></div>';
+      });
+    }
+
+    const pp = {};
+    facturas.filter(f => f.estado !== 'Pagada').forEach(f => { if (!pp[f.proveedor]) pp[f.proveedor] = {}; if (!pp[f.proveedor][f.moneda]) pp[f.proveedor][f.moneda] = 0; pp[f.proveedor][f.moneda] += f.saldo; });
+    const top = Object.entries(pp).map(([n,ms]) => [n,ms]).sort((a,b) => { const sa = Object.values(a[1]).reduce((x,y)=>x+y,0); const sb = Object.values(b[1]).reduce((x,y)=>x+y,0); return sb-sa; }).slice(0,5);
+    const topEl = document.getElementById('top-proveedores');
+    topEl.innerHTML = '';
+    if (!top.length) {
+      topEl.innerHTML = '<p style="color:#999;font-size:12px;text-align:center;padding:10px">Sin deuda pendiente</p>';
+    } else {
+      top.forEach(([nombre, monedas]) => {
+        const montoStr = Object.entries(monedas).map(([m,v]) => formatMonto(v,m)).join(' + ');
+        topEl.innerHTML += '<div class="resumen-item"><div class="resumen-proveedor">' + nombre + '</div><div class="resumen-monto">' + montoStr + '</div></div>';
+      });
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Tabla
   // ------------------------------------------------------------
   function renderTabla(facturas) {
+    document.getElementById('tabla-count').textContent = facturas.length + ' facturas';
     if (!facturas.length) {
       document.getElementById('tabla-container').innerHTML = '<p class="empty">No se encontraron facturas.</p>';
       return;
     }
 
-    let html = `<table>
-      <thead><tr>
-        <th>ID</th>
-        <th>Proveedor</th>
-        <th>País</th>
-        <th>Moneda</th>
-        <th>Total</th>
-        <th>Pagado</th>
-        <th>Saldo</th>
-        <th>Vencimiento</th>
-        <th>Días</th>
-        <th>Estado</th>
-        <th>Acciones</th>
-      </tr></thead><tbody>`;
+    let html = '<table><thead><tr><th>N° Factura</th><th>Proveedor</th><th>País</th><th>Mon.</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Vencimiento</th><th>Días</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>';
 
     facturas.forEach(f => {
-      const colorEstado = getColorEstado(f.estado);
-      const diasLabel   = getDiasLabel(f.dias);
-      html += `<tr>
-        <td>${f.id}</td>
-        <td>${f.proveedor}</td>
-        <td>${f.pais}</td>
-        <td>${f.moneda}</td>
-        <td>${formatMonto(f.montoTotal, f.moneda)}</td>
-        <td>${formatMonto(f.montoPagado, f.moneda)}</td>
-        <td>${formatMonto(f.saldo, f.moneda)}</td>
-        <td>${f.fechaVence}</td>
-        <td style="color:${f.dias < 0 ? '#d93025' : '#333'}">${diasLabel}</td>
-        <td><span class="badge ${colorEstado}">${f.estado}</span></td>
-        <td>
-          ${f.estado !== 'Pagada' ? `<button class="btn-sm" onclick="abrirModalPago('${f.id}', ${f.saldo}, '${f.moneda}')">Pagar</button>` : ''}
-        </td>
-      </tr>`;
+      const ce = getColorEstado(f.estado);
+      const dc = f.dias === null ? '' : f.dias < 0 ? 'dias-over' : f.dias <= 7 ? 'dias-warn' : 'dias-ok';
+      html += '<tr>';
+      html += '<td><div style="font-size:10px;color:#999">' + f.id + '</div><div style="font-weight:600;color:#4A1F60;font-size:12px">' + (f.numeroFactura || '—') + '</div></td>';
+      html += '<td style="font-weight:500;font-size:12px">' + f.proveedor + '</td>';
+      html += '<td style="font-size:12px">' + f.pais + '</td>';
+      html += '<td><span class="badge info">' + f.moneda + '</span></td>';
+      html += '<td style="font-weight:600;font-size:12px">' + formatMonto(f.montoTotal, f.moneda) + '</td>';
+      html += '<td style="color:#46C3AF;font-size:12px">' + formatMonto(f.montoPagado, f.moneda) + '</td>';
+      html += '<td style="font-weight:700;color:#FF4B5F;font-size:12px">' + formatMonto(f.saldo, f.moneda) + '</td>';
+      html += '<td style="font-size:12px">' + f.fechaVence + '</td>';
+      html += '<td class="' + dc + '" style="font-size:12px">' + getDiasLabel(f.dias) + '</td>';
+      html += '<td><span class="badge ' + ce + '">' + f.estado + '</span></td>';
+      html += '<td><div class="acciones-wrap">';
+      html += '<button class="btn-sm" style="border-color:#7D5596;color:#7D5596" onclick="verDetalle(' + JSON.stringify(f).replace(/"/g,'&quot;') + ')">Ver</button>';
+      if (f.estado !== 'Pagada') html += '<button class="btn-sm" style="border-color:#46C3AF;color:#46C3AF" onclick="abrirModalPago(\'' + f.id + '\',' + f.saldo + ',\'' + f.moneda + '\')">Pagar</button>';
+      html += '<button class="btn-sm" onclick="abrirModalEditar(' + JSON.stringify(f).replace(/"/g,'&quot;') + ')">Editar</button>';
+      html += '<button class="btn-sm" style="border-color:#EAA55E;color:#EAA55E" onclick="abrirModalDocumento(' + JSON.stringify(f).replace(/"/g,'&quot;') + ')">Doc</button>';
+      html += '<button class="btn-sm" style="border-color:#FF4B5F;color:#FF4B5F" onclick="abrirModalEliminar(\'' + f.id + '\',\'' + f.proveedor + '\',\'' + formatMonto(f.montoTotal, f.moneda) + '\')">Eliminar</button>';
+      html += '</div></td></tr>';
     });
 
     html += '</tbody></table>';
     document.getElementById('tabla-container').innerHTML = html;
+  }
+
+  // ------------------------------------------------------------
+  // Detalle factura con historial pagos y movimientos
+  // ------------------------------------------------------------
+  function verDetalle(f) {
+    facturaDetalleActual = f;
+    document.getElementById('detalle-titulo').textContent = 'Factura ' + (f.numeroFactura || f.id);
+    document.getElementById('detalle-body').innerHTML = '<p style="color:#7D5596;text-align:center;padding:30px">Cargando...</p>';
+    document.getElementById('modal-detalle').style.display = 'flex';
+    google.script.run.withSuccessHandler(pagos => {
+      google.script.run.withSuccessHandler(movs => {
+        renderDetalle(f, pagos, movs);
+      }).getMovimientos(f.id);
+    }).getPagosPorFactura(f.id);
+  }
+
+  function renderDetalle(f, pagos, movs) {
+    const pct = f.montoTotal > 0 ? Math.min(100, (f.montoPagado / f.montoTotal * 100)).toFixed(1) : 0;
+    let html = '';
+
+    html += '<div style="padding:18px 22px;border-bottom:1px solid #f0e8f8;background:#faf7fd">';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">';
+    html += kpiMini('Total factura', formatMonto(f.montoTotal, f.moneda), '#4A1F60', '#ede0f5');
+    html += kpiMini('Total pagado', formatMonto(f.montoPagado, f.moneda), '#46C3AF', '#d4f5ef');
+    html += kpiMini('Saldo pendiente', formatMonto(f.saldo, f.moneda), '#FF4B5F', '#ffe0e3');
+    html += '</div>';
+    html += '<div style="font-size:11px;color:#666;margin-bottom:5px;display:flex;justify-content:space-between"><span>Progreso de pago</span><span style="font-weight:600">' + pct + '%</span></div>';
+    html += '<div class="progress-bar-bg"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>';
+    html += '<div style="margin-top:10px;font-size:12px;color:#666;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">';
+    html += '<div><span style="color:#999">Proveedor:</span> <strong>' + f.proveedor + '</strong></div>';
+    html += '<div><span style="color:#999">País:</span> <strong>' + f.pais + '</strong></div>';
+    html += '<div><span style="color:#999">Estado:</span> <span class="badge ' + getColorEstado(f.estado) + '">' + f.estado + '</span></div>';
+    html += '<div><span style="color:#999">Emisión:</span> <strong>' + f.fechaEmision + '</strong></div>';
+    html += '<div><span style="color:#999">Vence:</span> <strong>' + f.fechaVence + '</strong></div>';
+    html += '<div><span style="color:#999">Días:</span> <span class="' + (f.dias < 0 ? 'dias-over' : f.dias <= 7 ? 'dias-warn' : 'dias-ok') + '">' + getDiasLabel(f.dias) + '</span></div>';
+    if (f.notas) html += '<div style="grid-column:1/-1"><span style="color:#999">Notas:</span> ' + f.notas + '</div>';
+    html += '</div></div>';
+
+    html += '<div style="padding:16px 22px;border-bottom:1px solid #f0e8f8">';
+    html += '<div style="font-size:11px;font-weight:700;color:#7D5596;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">';
+    html += '<span>Historial de pagos (' + pagos.length + ')</span>';
+    if (f.estado !== 'Pagada') html += '<button class="btn-sm" style="border-color:#46C3AF;color:#46C3AF" onclick="abrirModalPagoDesdeDetalle()">+ Registrar pago</button>';
+    html += '</div>';
+
+    if (!pagos.length) {
+      html += '<p style="color:#999;font-size:12px;text-align:center;padding:16px">No hay pagos registrados aún.</p>';
+    } else {
+      pagos.forEach((p, idx) => {
+        const tieneDoc = p.docUrl && p.docUrl !== '';
+        html += '<div style="background:' + (tieneDoc ? '#f5fff8' : '#fffaf5') + ';border-radius:8px;padding:12px 14px;margin-bottom:8px;border:1px solid ' + (tieneDoc ? '#46C3AF' : '#EAA55E') + '">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">';
+        html += '<div><div style="font-weight:600;color:#2C1A3E;font-size:13px">Pago #' + (idx+1) + ' — ' + formatMonto(p.monto, f.moneda) + '</div>';
+        html += '<div style="font-size:11px;color:#666;margin-top:2px">Fecha: ' + p.fecha + ' · ID: ' + p.id + '</div>';
+        if (p.justificacion) html += '<div style="font-size:11px;color:#854F0B;margin-top:3px;background:#fdf0e0;padding:2px 7px;border-radius:4px;display:inline-block">Justificación: ' + p.justificacion + '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;flex-shrink:0">';
+        html += '<button class="btn-sm" style="border-color:#46C3AF;color:#46C3AF" onclick="abrirEditarPago(\'' + p.id + '\',' + p.monto + ',\'' + p.fechaRaw + '\')">Editar</button>';
+        if (tieneDoc) {
+          html += '<a href="' + p.docUrl + '" target="_blank"><button class="btn-sm" style="border-color:#5B94B7;color:#5B94B7">Ver comp.</button></a>';
+        } else {
+          html += '<button style="background:#EAA55E;color:white;border:none;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600" onclick="abrirDocPago(\'' + p.id + '\',\'' + f.id + '\')">⚠ Adjuntar</button>';
+        }
+        html += '</div></div></div>';
+      });
+    }
+    html += '</div>';
+
+    html += '<div style="padding:16px 22px">';
+    html += '<div style="font-size:11px;font-weight:700;color:#7D5596;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px">Historial de movimientos (' + movs.length + ')</div>';
+    if (!movs.length) {
+      html += '<p style="color:#999;font-size:12px;text-align:center;padding:10px">Sin movimientos registrados.</p>';
+    } else {
+      html += '<div class="mov-timeline">';
+      movs.forEach(m => {
+        const color = m.tipo === 'Creación' ? '#46C3AF' : m.tipo.includes('Pago') || m.tipo.includes('pago') ? '#5B94B7' : m.tipo.includes('Elim') ? '#FF4B5F' : '#EAA55E';
+        html += '<div class="mov-item"><div class="mov-dot" style="background:' + color + '"></div>';
+        html += '<div class="mov-content"><div class="mov-tipo">' + m.tipo + (m.monto ? ' — ' + formatMonto(m.monto, m.moneda || f.moneda) : '') + '</div>';
+        html += '<div class="mov-detalle">' + m.detalle + '</div>';
+        if (m.justificacion) html += '<span class="mov-just">Justificación: ' + m.justificacion + '</span>';
+        html += '<div class="mov-fecha">' + m.fechaHora + '</div>';
+        html += '</div></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+
+    document.getElementById('detalle-body').innerHTML = html;
+  }
+
+  function kpiMini(label, value, color, bg) {
+    return '<div style="background:' + bg + ';border-radius:8px;padding:12px;border-left:3px solid ' + color + '"><div style="font-size:10px;color:' + color + ';font-weight:700;text-transform:uppercase;margin-bottom:3px">' + label + '</div><div style="font-size:16px;font-weight:700;color:' + color + '">' + value + '</div></div>';
+  }
+
+  function abrirModalPagoDesdeDetalle() {
+    if (!facturaDetalleActual) return;
+    cerrarModal('modal-detalle');
+    abrirModalPago(facturaDetalleActual.id, facturaDetalleActual.saldo, facturaDetalleActual.moneda);
   }
 
   // ------------------------------------------------------------
@@ -123,56 +310,105 @@
     const pais      = document.getElementById('f-pais').value;
     const proveedor = document.getElementById('f-proveedor').value;
     const moneda    = document.getElementById('f-moneda').value;
-    const desde     = document.getElementById('f-desde').value;
-    const hasta     = document.getElementById('f-hasta').value;
+    const estado    = document.getElementById('f-estado').value;
 
     const filtradas = todasLasFacturas.filter(f => {
-      if (pais      && f.pais      !== pais)      return false;
-      if (proveedor && f.proveedor !== proveedor)  return false;
-      if (moneda    && f.moneda    !== moneda)     return false;
+      if (pais      && f.pais      !== pais)     return false;
+      if (proveedor && f.proveedor !== proveedor) return false;
+      if (moneda    && f.moneda    !== moneda)    return false;
+      if (estado    && f.estado    !== estado)    return false;
       return true;
     });
-
     renderTabla(filtradas);
   }
 
   function limpiarFiltros() {
-    ['f-pais','f-proveedor','f-moneda','f-desde','f-hasta'].forEach(id => {
+    ['f-pais','f-proveedor','f-moneda','f-estado','f-desde','f-hasta'].forEach(id => {
       document.getElementById(id).value = '';
     });
+    monedaKPI = '';
+    renderKPITabs(resumenGlobal);
+    renderKPIs(resumenGlobal, '');
+    renderChart(resumenGlobal, '');
     renderTabla(todasLasFacturas);
   }
 
   // ------------------------------------------------------------
-  // Modal nueva factura
+  // Modal factura
   // ------------------------------------------------------------
   function abrirModalFactura() {
+    facturaEditando = null;
+    document.getElementById('modal-factura-titulo').textContent = 'Nueva factura';
+    document.getElementById('btn-guardar-factura').textContent = 'Guardar factura';
+    document.getElementById('nf-justificacion-wrap').style.display = 'none';
+    ['nf-monto','nf-emision','nf-vence','nf-numero','nf-notas','nf-justificacion'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('nf-proveedor').selectedIndex = 0;
+    document.getElementById('nf-pais').selectedIndex = 0;
+    document.getElementById('nf-moneda').selectedIndex = 0;
+    document.getElementById('nf-error').style.display = 'none';
+    document.getElementById('modal-factura').style.display = 'flex';
+  }
+
+  function abrirModalEditar(f) {
+    facturaEditando = f;
+    document.getElementById('modal-factura-titulo').textContent = 'Editar — ' + (f.numeroFactura || f.id);
+    document.getElementById('btn-guardar-factura').textContent = 'Guardar cambios';
+    document.getElementById('nf-justificacion-wrap').style.display = 'block';
+    document.getElementById('nf-justificacion').value = '';
+
+    const setSelect = (id, val) => {
+      const el = document.getElementById(id);
+      for (let i = 0; i < el.options.length; i++) { if (el.options[i].value === val) { el.selectedIndex = i; break; } }
+    };
+    setSelect('nf-proveedor', f.proveedor);
+    setSelect('nf-pais', f.pais);
+    setSelect('nf-moneda', f.moneda);
+    document.getElementById('nf-monto').value  = f.montoTotal;
+    document.getElementById('nf-notas').value  = f.notas;
+    document.getElementById('nf-numero').value = f.numeroFactura || '';
+
+    if (f.fechaEmision) { const p = f.fechaEmision.split('/'); if (p.length===3) document.getElementById('nf-emision').value = p[2]+'-'+p[1]+'-'+p[0]; }
+    if (f.fechaVence)   { const p = f.fechaVence.split('/');   if (p.length===3) document.getElementById('nf-vence').value   = p[2]+'-'+p[1]+'-'+p[0]; }
+
+    document.getElementById('nf-error').style.display = 'none';
     document.getElementById('modal-factura').style.display = 'flex';
   }
 
   function guardarFactura() {
     const data = {
-      proveedor    : document.getElementById('nf-proveedor').value,
-      pais         : document.getElementById('nf-pais').value,
-      moneda       : document.getElementById('nf-moneda').value,
-      montoTotal   : document.getElementById('nf-monto').value,
-      fechaEmision : document.getElementById('nf-emision').value,
-      fechaVence   : document.getElementById('nf-vence').value,
-      notas        : document.getElementById('nf-notas').value
+      proveedor     : document.getElementById('nf-proveedor').value,
+      pais          : document.getElementById('nf-pais').value,
+      moneda        : document.getElementById('nf-moneda').value,
+      montoTotal    : document.getElementById('nf-monto').value,
+      fechaEmision  : document.getElementById('nf-emision').value,
+      fechaVence    : document.getElementById('nf-vence').value,
+      numeroFactura : document.getElementById('nf-numero').value,
+      notas         : document.getElementById('nf-notas').value
     };
 
     if (!data.proveedor || !data.montoTotal || !data.fechaVence) {
-      document.getElementById('nf-error').style.display = 'block';
-      document.getElementById('nf-error').textContent = 'Completá los campos requeridos.';
+      const err = document.getElementById('nf-error');
+      err.style.display = 'block';
+      err.textContent = 'Completá los campos requeridos.';
       return;
     }
 
-    google.script.run
-      .withSuccessHandler(() => {
-        cerrarModal('modal-factura');
-        cargarFacturas();
-      })
-      .crearFactura(data);
+    if (facturaEditando) {
+      const just = document.getElementById('nf-justificacion').value.trim();
+      if (!just) {
+        const err = document.getElementById('nf-error');
+        err.style.display = 'block';
+        err.textContent = 'La justificación es requerida para editar.';
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(() => { cerrarModal('modal-factura'); cargarFacturas(); })
+        .editarFactura(facturaEditando.id, data, just);
+    } else {
+      google.script.run
+        .withSuccessHandler(() => { cerrarModal('modal-factura'); cargarFacturas(); })
+        .crearFactura(data);
+    }
   }
 
   // ------------------------------------------------------------
@@ -180,7 +416,7 @@
   // ------------------------------------------------------------
   function abrirModalPago(id, saldo, moneda) {
     facturaSeleccionada = id;
-    document.getElementById('pago-info').textContent = `Factura ${id} — Saldo pendiente: ${formatMonto(saldo, moneda)}`;
+    document.getElementById('pago-info').textContent = 'Factura ' + id + ' — Saldo: ' + formatMonto(saldo, moneda);
     document.getElementById('pago-monto').value = '';
     document.getElementById('pago-fecha').value = new Date().toISOString().split('T')[0];
     document.getElementById('modal-pago').style.display = 'flex';
@@ -190,37 +426,303 @@
     const monto = document.getElementById('pago-monto').value;
     const fecha = document.getElementById('pago-fecha').value;
     if (!monto || !fecha) return;
+    google.script.run
+      .withSuccessHandler(() => { cerrarModal('modal-pago'); cargarFacturas(); })
+      .registrarPago(facturaSeleccionada, monto, fecha);
+  }
 
+  // ------------------------------------------------------------
+  // Editar pago
+  // ------------------------------------------------------------
+  function abrirEditarPago(idPago, monto, fechaRaw) {
+    pagoSeleccionado = idPago;
+    document.getElementById('editar-pago-info').textContent = 'Pago ID: ' + idPago;
+    document.getElementById('ep-monto').value = monto;
+    document.getElementById('ep-fecha').value = fechaRaw || '';
+    document.getElementById('ep-justificacion').value = '';
+    document.getElementById('ep-error').style.display = 'none';
+    document.getElementById('modal-editar-pago').style.display = 'flex';
+  }
+
+  function confirmarEditarPago() {
+    const monto = document.getElementById('ep-monto').value;
+    const fecha = document.getElementById('ep-fecha').value;
+    const just  = document.getElementById('ep-justificacion').value.trim();
+
+    if (!monto || !fecha) {
+      document.getElementById('ep-error').style.display = 'block';
+      document.getElementById('ep-error').textContent = 'Monto y fecha son requeridos.';
+      return;
+    }
+    if (!just) {
+      document.getElementById('ep-error').style.display = 'block';
+      document.getElementById('ep-error').textContent = 'La justificación es requerida.';
+      return;
+    }
     google.script.run
       .withSuccessHandler(() => {
-        cerrarModal('modal-pago');
+        cerrarModal('modal-editar-pago');
         cargarFacturas();
+        if (facturaDetalleActual) verDetalle(facturaDetalleActual);
       })
-      .registrarPago(facturaSeleccionada, monto, fecha);
+      .editarPago(pagoSeleccionado, monto, fecha, just);
+  }
+
+  // ------------------------------------------------------------
+  // Eliminar factura
+  // ------------------------------------------------------------
+  function abrirModalEliminar(id, proveedor, monto) {
+    facturaSeleccionada = id;
+    document.getElementById('eliminar-info').textContent = id + ' · ' + proveedor + ' · ' + monto;
+    document.getElementById('modal-eliminar').style.display = 'flex';
+  }
+
+  function confirmarEliminar() {
+    google.script.run
+      .withSuccessHandler(() => { cerrarModal('modal-eliminar'); cargarFacturas(); })
+      .eliminarFactura(facturaSeleccionada);
+  }
+
+  // ------------------------------------------------------------
+  // Documento factura
+  // ------------------------------------------------------------
+  function abrirModalDocumento(f) {
+    facturaSeleccionada = f.id;
+    document.getElementById('doc-factura-id').textContent = f.numeroFactura || f.id;
+
+    const actualWrap = document.getElementById('doc-actual-wrap');
+    if (f.docUrl) {
+      actualWrap.style.display = 'block';
+      document.getElementById('doc-actual-link').href = f.docUrl;
+      document.getElementById('doc-upload-label').textContent = 'Reemplazar documento';
+    } else {
+      actualWrap.style.display = 'none';
+      document.getElementById('doc-upload-label').textContent = 'Subir nuevo documento';
+    }
+
+    document.getElementById('doc-input').value = '';
+    document.getElementById('doc-preview').innerHTML = '';
+    document.getElementById('doc-error').style.display = 'none';
+    document.getElementById('modal-documento').style.display = 'flex';
+  }
+
+  function eliminarDocumentoFactura() {
+    google.script.run
+      .withSuccessHandler(() => { cerrarModal('modal-documento'); cargarFacturas(); })
+      .eliminarDocumento(facturaSeleccionada);
+  }
+
+  function previewDocumento() {
+    const input = document.getElementById('doc-input');
+    if (!input.files.length) return;
+    const file = input.files[0];
+    const allowed = ['application/pdf','image/jpeg','image/png','image/jpg'];
+    if (!allowed.includes(file.type)) {
+      document.getElementById('doc-error').style.display = 'block';
+      document.getElementById('doc-error').textContent = 'Solo PDF, JPG o PNG.';
+      return;
+    }
+    document.getElementById('doc-error').style.display = 'none';
+    document.getElementById('doc-preview').innerHTML = '<div style="font-size:12px;color:#7D5596;padding:8px;background:#faf7fd;border-radius:6px">' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)</div>';
+  }
+
+  function subirDocumento() {
+    const input = document.getElementById('doc-input');
+    if (!input.files.length) { document.getElementById('doc-error').style.display='block'; document.getElementById('doc-error').textContent='Seleccioná un archivo.'; return; }
+    const file = input.files[0];
+    const allowed = ['application/pdf','image/jpeg','image/png','image/jpg'];
+    if (!allowed.includes(file.type)) { document.getElementById('doc-error').style.display='block'; document.getElementById('doc-error').textContent='Solo PDF, JPG o PNG.'; return; }
+    const btn = document.getElementById('btn-subir-doc');
+    btn.textContent = 'Subiendo...'; btn.disabled = true;
+    const reader = new FileReader();
+    reader.onload = e => {
+      google.script.run
+        .withSuccessHandler(() => { cerrarModal('modal-documento'); btn.textContent='Subir documento'; btn.disabled=false; cargarFacturas(); })
+        .withFailureHandler(err => { document.getElementById('doc-error').style.display='block'; document.getElementById('doc-error').textContent='Error: '+err.message; btn.textContent='Subir documento'; btn.disabled=false; })
+        .subirDocumento(facturaSeleccionada, file.name, e.target.result.split(',')[1], file.type);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ------------------------------------------------------------
+  // Documento pago
+  // ------------------------------------------------------------
+  function abrirDocPago(idPago, idFactura) {
+    pagoSeleccionado = { idPago, idFactura };
+    document.getElementById('doc-pago-id').textContent = idPago;
+    document.getElementById('doc-pago-input').value = '';
+    document.getElementById('doc-pago-preview').innerHTML = '';
+    document.getElementById('doc-pago-error').style.display = 'none';
+    document.getElementById('modal-doc-pago').style.display = 'flex';
+  }
+
+  function previewDocumentoPago() {
+    const input = document.getElementById('doc-pago-input');
+    if (!input.files.length) return;
+    const file = input.files[0];
+    const allowed = ['application/pdf','image/jpeg','image/png','image/jpg'];
+    if (!allowed.includes(file.type)) { document.getElementById('doc-pago-error').style.display='block'; document.getElementById('doc-pago-error').textContent='Solo PDF, JPG o PNG.'; return; }
+    document.getElementById('doc-pago-error').style.display = 'none';
+    document.getElementById('doc-pago-preview').innerHTML = '<div style="font-size:12px;color:#0F6E56;padding:8px;background:#d4f5ef;border-radius:6px">' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)</div>';
+  }
+
+  function subirDocumentoPago() {
+    const input = document.getElementById('doc-pago-input');
+    if (!input.files.length) { document.getElementById('doc-pago-error').style.display='block'; document.getElementById('doc-pago-error').textContent='Seleccioná un archivo.'; return; }
+    const file = input.files[0];
+    const allowed = ['application/pdf','image/jpeg','image/png','image/jpg'];
+    if (!allowed.includes(file.type)) { document.getElementById('doc-pago-error').style.display='block'; document.getElementById('doc-pago-error').textContent='Solo PDF, JPG o PNG.'; return; }
+    const btn = document.getElementById('btn-subir-doc-pago');
+    btn.textContent = 'Subiendo...'; btn.disabled = true;
+    const reader = new FileReader();
+    reader.onload = e => {
+      google.script.run
+        .withSuccessHandler(() => { cerrarModal('modal-doc-pago'); btn.textContent='Subir comprobante'; btn.disabled=false; if(facturaDetalleActual) verDetalle(facturaDetalleActual); })
+        .withFailureHandler(err => { document.getElementById('doc-pago-error').style.display='block'; document.getElementById('doc-pago-error').textContent='Error: '+err.message; btn.textContent='Subir comprobante'; btn.disabled=false; })
+        .subirDocumentoPago(pagoSeleccionado.idPago, file.name, e.target.result.split(',')[1], file.type, pagoSeleccionado.idFactura);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ------------------------------------------------------------
+  // Reporte
+  // ------------------------------------------------------------
+  function verReporte() {
+    document.getElementById('reporte-body').innerHTML = '<p style="color:#999;text-align:center;padding:30px">Configurá los filtros y presioná "Generar reporte"</p>';
+    document.getElementById('modal-reporte').style.display = 'flex';
+  }
+
+  function generarReporte() {
+    const desde     = document.getElementById('r-desde').value;
+    const hasta     = document.getElementById('r-hasta').value;
+    const pais      = document.getElementById('r-pais').value;
+    const proveedor = document.getElementById('r-proveedor').value;
+    const moneda    = document.getElementById('r-moneda').value;
+    const estado    = document.getElementById('r-estado').value;
+
+    let filtradas = todasLasFacturas.filter(f => {
+      if (pais      && f.pais      !== pais)     return false;
+      if (proveedor && f.proveedor !== proveedor) return false;
+      if (moneda    && f.moneda    !== moneda)    return false;
+      if (estado    && f.estado    !== estado)    return false;
+      if (desde && f.fechaEmision) { const p=f.fechaEmision.split('/'); if(p.length===3 && new Date(p[2]+'-'+p[1]+'-'+p[0])<new Date(desde)) return false; }
+      if (hasta && f.fechaEmision) { const p=f.fechaEmision.split('/'); if(p.length===3 && new Date(p[2]+'-'+p[1]+'-'+p[0])>new Date(hasta)) return false; }
+      return true;
+    });
+
+    const porMoneda = {};
+    filtradas.forEach(f => {
+      if (!porMoneda[f.moneda]) porMoneda[f.moneda] = { pendiente:0, vencido:0, pagado:0, total:0, count:0 };
+      porMoneda[f.moneda].total    += f.montoTotal;
+      porMoneda[f.moneda].count++;
+      if (f.estado==='Pagada')   porMoneda[f.moneda].pagado    += f.montoPagado;
+      if (f.estado==='Vencida')  porMoneda[f.moneda].vencido   += f.saldo;
+      if (f.estado==='Pendiente'||f.estado==='Parcial') porMoneda[f.moneda].pendiente += f.saldo;
+    });
+
+    let html = '<div>';
+
+    Object.entries(porMoneda).forEach(([m, d]) => {
+      html += '<div style="margin-bottom:16px">';
+      html += '<div style="font-size:11px;font-weight:700;color:#4A1F60;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #4A1F60">Resumen ' + m + ' (' + d.count + ' facturas)</div>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">';
+      html += repKpi('Total', formatMonto(d.total,m), '#4A1F60', '#ede0f5');
+      html += repKpi('Pendiente', formatMonto(d.pendiente,m), '#854F0B', '#fdf0e0');
+      html += repKpi('Vencido', formatMonto(d.vencido,m), '#a0001a', '#ffe0e3');
+      html += repKpi('Pagado', formatMonto(d.pagado,m), '#0F6E56', '#d4f5ef');
+      html += '</div></div>';
+    });
+
+    html += '<div style="font-size:11px;font-weight:700;color:#7D5596;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 10px;padding-bottom:6px;border-bottom:2px solid #EAA55E">Detalle de facturas (' + filtradas.length + ')</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<thead><tr style="background:#4A1F60"><th style="padding:8px 10px;color:white;text-align:left">N° Factura</th><th style="padding:8px 10px;color:white;text-align:left">Proveedor</th><th style="padding:8px 10px;color:white;text-align:left">País</th><th style="padding:8px 10px;color:white;text-align:left">Mon.</th><th style="padding:8px 10px;color:white;text-align:right">Total</th><th style="padding:8px 10px;color:white;text-align:right">Pagado</th><th style="padding:8px 10px;color:white;text-align:right">Saldo</th><th style="padding:8px 10px;color:white;text-align:left">Vence</th><th style="padding:8px 10px;color:white;text-align:left">Estado</th></tr></thead><tbody>';
+
+    filtradas.forEach(f => {
+      const ec = f.estado==='Pagada'?'#46C3AF':f.estado==='Vencida'?'#FF4B5F':'#EAA55E';
+      html += '<tr style="border-bottom:1px solid #f5f0fa">';
+      html += '<td style="padding:8px 10px"><div style="font-weight:600;color:#4A1F60">' + (f.numeroFactura||'—') + '</div><div style="font-size:10px;color:#999">' + f.id + '</div></td>';
+      html += '<td style="padding:8px 10px;font-weight:500">' + f.proveedor + '</td>';
+      html += '<td style="padding:8px 10px;color:#666">' + f.pais + '</td>';
+      html += '<td style="padding:8px 10px">' + f.moneda + '</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-weight:600">' + formatMonto(f.montoTotal,f.moneda) + '</td>';
+      html += '<td style="padding:8px 10px;text-align:right;color:#46C3AF;font-weight:600">' + formatMonto(f.montoPagado,f.moneda) + '</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:#FF4B5F">' + formatMonto(f.saldo,f.moneda) + '</td>';
+      html += '<td style="padding:8px 10px">' + f.fechaVence + '</td>';
+      html += '<td style="padding:8px 10px;color:' + ec + ';font-weight:600">' + f.estado + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    document.getElementById('reporte-body').innerHTML = html;
+  }
+
+  function generarReporteMovimientos() {
+    document.getElementById('reporte-body').innerHTML = '<p style="color:#7D5596;text-align:center;padding:20px">Cargando movimientos...</p>';
+    google.script.run.withSuccessHandler(movs => {
+      const desde     = document.getElementById('r-desde').value;
+      const hasta     = document.getElementById('r-hasta').value;
+      const proveedor = document.getElementById('r-proveedor').value;
+
+      let filtrados = movs;
+      if (desde) filtrados = filtrados.filter(m => { const p=m.fecha.split('/'); return p.length===3 && new Date(p[2]+'-'+p[1]+'-'+p[0])>=new Date(desde); });
+      if (hasta) filtrados = filtrados.filter(m => { const p=m.fecha.split('/'); return p.length===3 && new Date(p[2]+'-'+p[1]+'-'+p[0])<=new Date(hasta); });
+
+      const tipos = { 'Creación':0, 'Pago':0, 'Edición factura':0, 'Edición pago':0, 'Documento':0, 'Eliminación':0 };
+      filtrados.forEach(m => { if (tipos[m.tipo]!==undefined) tipos[m.tipo]++; else tipos[m.tipo]=1; });
+
+      let html = '<div>';
+      html += '<div style="font-size:11px;font-weight:700;color:#4A1F60;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;padding-bottom:4px;border-bottom:2px solid #4A1F60">Resumen de actividad (' + filtrados.length + ' movimientos)</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">';
+      Object.entries(tipos).forEach(([tipo, count]) => {
+        if (count > 0) {
+          const color = tipo==='Creación'?'#46C3AF':tipo.includes('Pago')||tipo.includes('pago')?'#5B94B7':tipo.includes('Elim')?'#FF4B5F':'#EAA55E';
+          html += '<div style="background:white;border-radius:8px;padding:10px 14px;border-left:3px solid ' + color + ';border:1px solid #f0e8f8"><div style="font-size:11px;color:#666">' + tipo + '</div><div style="font-size:18px;font-weight:700;color:' + color + '">' + count + '</div></div>';
+        }
+      });
+      html += '</div>';
+
+      html += '<div style="font-size:11px;font-weight:700;color:#7D5596;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #EAA55E">Detalle de movimientos</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead><tr style="background:#4A1F60"><th style="padding:8px 10px;color:white;text-align:left">Fecha/Hora</th><th style="padding:8px 10px;color:white;text-align:left">Tipo</th><th style="padding:8px 10px;color:white;text-align:left">Factura</th><th style="padding:8px 10px;color:white;text-align:left">Detalle</th><th style="padding:8px 10px;color:white;text-align:right">Monto</th><th style="padding:8px 10px;color:white;text-align:left">Justificación</th></tr></thead><tbody>';
+
+      filtrados.forEach(m => {
+        const color = m.tipo==='Creación'?'#46C3AF':m.tipo.includes('Pago')||m.tipo.includes('pago')?'#5B94B7':m.tipo.includes('Elim')?'#FF4B5F':'#EAA55E';
+        html += '<tr style="border-bottom:1px solid #f5f0fa">';
+        html += '<td style="padding:8px 10px;color:#666;white-space:nowrap">' + m.fechaHora + '</td>';
+        html += '<td style="padding:8px 10px"><span style="color:' + color + ';font-weight:600">' + m.tipo + '</span></td>';
+        html += '<td style="padding:8px 10px;font-family:monospace;font-size:11px">' + m.idFactura + '</td>';
+        html += '<td style="padding:8px 10px;color:#555">' + m.detalle + '</td>';
+        html += '<td style="padding:8px 10px;text-align:right;font-weight:600">' + (m.monto ? formatMonto(m.monto, m.moneda) : '—') + '</td>';
+        html += '<td style="padding:8px 10px">' + (m.justificacion ? '<span style="color:#854F0B;background:#fdf0e0;padding:2px 7px;border-radius:4px;font-size:11px">' + m.justificacion + '</span>' : '<span style="color:#ccc">—</span>') + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      document.getElementById('reporte-body').innerHTML = html;
+    }).getMovimientos(null);
+  }
+
+  function repKpi(label, value, color, bg) {
+    return '<div style="background:' + bg + ';border-radius:8px;padding:12px;border-left:3px solid ' + color + '"><div style="font-size:10px;color:' + color + ';font-weight:700;text-transform:uppercase;margin-bottom:3px">' + label + '</div><div style="font-size:15px;font-weight:700;color:' + color + '">' + value + '</div></div>';
   }
 
   // ------------------------------------------------------------
   // Helpers
   // ------------------------------------------------------------
-  function cerrarModal(id) {
-    document.getElementById(id).style.display = 'none';
-  }
+  function cerrarModal(id) { document.getElementById(id).style.display = 'none'; }
 
   function formatMonto(monto, moneda) {
-    const simbolos = { USD: '$', CRC: '₡', PAB: 'B/.' };
-    const s = simbolos[moneda] || '';
-    return s + parseFloat(monto || 0).toLocaleString('es-CR', { minimumFractionDigits: 2 });
+    const simbolos = { USD: '$', CRC: '₡' };
+    const s = simbolos[moneda] || moneda + ' ';
+    return s + parseFloat(monto||0).toLocaleString('es-CR', { minimumFractionDigits: 2 });
   }
 
   function getDiasLabel(dias) {
-    if (dias === null || dias === undefined) return '';
-    if (dias < 0)  return `Vencida hace ${Math.abs(dias)}d`;
-    if (dias === 0) return 'Vence hoy';
-    return `Vence en ${dias}d`;
+    if (dias===null||dias===undefined) return '';
+    if (dias<0) return 'Vencida hace ' + Math.abs(dias) + 'd';
+    if (dias===0) return 'Vence hoy';
+    return 'Vence en ' + dias + 'd';
   }
 
   function getColorEstado(estado) {
-    const map = { 'Pagada': 'success', 'Pendiente': 'warning', 'Vencida': 'danger', 'Parcial': 'info' };
-    return map[estado] || 'secondary';
+    return { 'Pagada':'success','Pendiente':'warning','Vencida':'danger','Parcial':'info' }[estado] || 'neutral';
   }
 </script>
