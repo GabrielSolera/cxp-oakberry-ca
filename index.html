@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CXP Centroamérica</title>
+  <?!= include('styles'); ?>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <h1>CXP Centroamérica</h1>
+    <button class="btn-primary" onclick="abrirModalFactura()">+ Nueva factura</button>
+  </div>
+
+  <!-- KPIs -->
+  <div id="kpis" class="kpi-grid"></div>
+
+  <!-- FILTROS -->
+  <div class="filtros-card">
+    <div class="filtros-grid">
+      <select id="f-pais" onchange="aplicarFiltros()">
+        <option value="">Todos los países</option>
+      </select>
+      <select id="f-proveedor" onchange="aplicarFiltros()">
+        <option value="">Todos los proveedores</option>
+      </select>
+      <select id="f-moneda" onchange="aplicarFiltros()">
+        <option value="">Todas las monedas</option>
+        <option value="USD">USD</option>
+        <option value="CRC">CRC</option>
+        <option value="PAB">PAB</option>
+      </select>
+      <input type="date" id="f-desde" onchange="aplicarFiltros()" placeholder="Desde">
+      <input type="date" id="f-hasta" onchange="aplicarFiltros()" placeholder="Hasta">
+      <button class="btn-secondary" onclick="limpiarFiltros()">Limpiar</button>
+    </div>
+  </div>
+
+  <!-- TABLA -->
+  <div class="tabla-card">
+    <div id="tabla-container">
+      <p class="loading">Cargando facturas...</p>
+    </div>
+  </div>
+
+  <!-- MODAL NUEVA FACTURA -->
+  <div id="modal-factura" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Nueva factura</h2>
+        <button onclick="cerrarModal('modal-factura')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Proveedor</label>
+            <select id="nf-proveedor"></select>
+          </div>
+          <div class="form-group">
+            <label>País</label>
+            <select id="nf-pais"></select>
+          </div>
+          <div class="form-group">
+            <label>Moneda</label>
+            <select id="nf-moneda">
+              <option value="USD">USD</option>
+              <option value="CRC">CRC</option>
+              <option value="PAB">PAB</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Monto total</label>
+            <input type="number" id="nf-monto" placeholder="0.00" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Fecha emisión</label>
+            <input type="date" id="nf-emision">
+          </div>
+          <div class="form-group">
+            <label>Fecha vencimiento</label>
+            <input type="date" id="nf-vence">
+          </div>
+          <div class="form-group full">
+            <label>Notas</label>
+            <input type="text" id="nf-notas" placeholder="Opcional">
+          </div>
+        </div>
+        <div id="nf-error" class="error-msg" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-factura')">Cancelar</button>
+        <button class="btn-primary" onclick="guardarFactura()">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL REGISTRAR PAGO -->
+  <div id="modal-pago" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Registrar pago</h2>
+        <button onclick="cerrarModal('modal-pago')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="pago-info" style="margin-bottom:16px;color:#666"></p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Monto a pagar</label>
+            <input type="number" id="pago-monto" placeholder="0.00" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Fecha de pago</label>
+            <input type="date" id="pago-fecha">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="cerrarModal('modal-pago')">Cancelar</button>
+        <button class="btn-primary" onclick="confirmarPago()">Confirmar pago</button>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('scripts'); ?>
+</body>
+</html>

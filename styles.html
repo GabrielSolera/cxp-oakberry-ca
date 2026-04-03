@@ -1,0 +1,176 @@
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f9;
+    color: #333;
+    font-size: 14px;
+  }
+
+  .header {
+    background: #1a73e8;
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .header h1 { font-size: 20px; font-weight: 600; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
+  }
+
+  .kpi-card {
+    background: white;
+    border-radius: 8px;
+    padding: 14px 16px;
+    border: 1px solid #e0e0e0;
+  }
+
+  .kpi-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .kpi-value { font-size: 22px; font-weight: 600; }
+  .kpi-value.success { color: #1e8e3e; }
+  .kpi-value.warning { color: #f29900; }
+  .kpi-value.danger  { color: #d93025; }
+  .kpi-value.info    { color: #1a73e8; }
+
+  .filtros-card, .tabla-card {
+    background: white;
+    margin: 0 24px 16px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    padding: 16px;
+  }
+
+  .filtros-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+
+  select, input[type="date"], input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+    background: white;
+  }
+
+  select:focus, input:focus { outline: none; border-color: #1a73e8; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: #f8f9fa;
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 2px solid #e0e0e0;
+    font-weight: 600;
+    color: #555;
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #f8f9ff; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.success { background: #e6f4ea; color: #1e8e3e; }
+  .badge.warning { background: #fef7e0; color: #b06000; }
+  .badge.danger  { background: #fce8e6; color: #d93025; }
+  .badge.info    { background: #e8f0fe; color: #1a73e8; }
+
+  .btn-primary {
+    background: #1a73e8;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .btn-primary:hover { background: #1557b0; }
+
+  .btn-secondary {
+    background: white;
+    color: #333;
+    border: 1px solid #ddd;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .btn-secondary:hover { background: #f5f5f5; }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid #ddd;
+    background: white;
+  }
+  .btn-sm:hover { background: #f0f0f0; }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: white;
+    border-radius: 10px;
+    width: 520px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .modal-header h2 { font-size: 16px; }
+  .modal-header button { background: none; border: none; cursor: pointer; font-size: 18px; color: #666; }
+
+  .modal-body { padding: 20px; }
+  .modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-group label { font-size: 12px; color: #555; font-weight: 500; }
+
+  .error-msg { color: #d93025; font-size: 13px; margin-top: 10px; }
+  .loading { color: #888; padding: 20px; text-align: center; }
+  .empty { color: #888; padding: 30px; text-align: center; }
+</style>

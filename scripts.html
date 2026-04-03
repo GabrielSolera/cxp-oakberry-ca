@@ -1,0 +1,226 @@
+<script>
+  let todasLasFacturas = [];
+  let facturaSeleccionada = null;
+
+  // ------------------------------------------------------------
+  // Inicialización
+  // ------------------------------------------------------------
+  document.addEventListener('DOMContentLoaded', () => {
+    cargarSelects();
+    cargarFacturas();
+  });
+
+  // ------------------------------------------------------------
+  // Carga inicial de datos
+  // ------------------------------------------------------------
+  function cargarSelects() {
+    google.script.run.withSuccessHandler(paises => {
+      const sel = document.getElementById('f-pais');
+      const selNF = document.getElementById('nf-pais');
+      paises.forEach(p => {
+        sel.innerHTML   += `<option value="${p}">${p}</option>`;
+        selNF.innerHTML += `<option value="${p}">${p}</option>`;
+      });
+    }).getPaises();
+
+    google.script.run.withSuccessHandler(proveedores => {
+      const sel = document.getElementById('f-proveedor');
+      const selNF = document.getElementById('nf-proveedor');
+      proveedores.forEach(p => {
+        sel.innerHTML   += `<option value="${p.nombre}">${p.nombre}</option>`;
+        selNF.innerHTML += `<option value="${p.nombre}">${p.nombre}</option>`;
+      });
+    }).getProveedores();
+  }
+
+  function cargarFacturas() {
+    document.getElementById('tabla-container').innerHTML = '<p class="loading">Cargando facturas...</p>';
+    google.script.run.withSuccessHandler(facturas => {
+      todasLasFacturas = facturas;
+      renderTabla(facturas);
+      cargarKPIs();
+    }).getFacturas(null);
+  }
+
+  function cargarKPIs() {
+    google.script.run.withSuccessHandler(resumen => {
+      const kpis = document.getElementById('kpis');
+      kpis.innerHTML = '';
+      Object.entries(resumen).forEach(([moneda, data]) => {
+        kpis.innerHTML += `
+          <div class="kpi-card">
+            <div class="kpi-label">Total ${moneda}</div>
+            <div class="kpi-value">${formatMonto(data.total, moneda)}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pendiente ${moneda}</div>
+            <div class="kpi-value warning">${formatMonto(data.pendiente, moneda)}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Vencido ${moneda}</div>
+            <div class="kpi-value danger">${formatMonto(data.vencido, moneda)}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pagado ${moneda}</div>
+            <div class="kpi-value success">${formatMonto(data.pagado, moneda)}</div>
+          </div>`;
+      });
+    }).getResumen();
+  }
+
+  // ------------------------------------------------------------
+  // Render tabla
+  // ------------------------------------------------------------
+  function renderTabla(facturas) {
+    if (!facturas.length) {
+      document.getElementById('tabla-container').innerHTML = '<p class="empty">No se encontraron facturas.</p>';
+      return;
+    }
+
+    let html = `<table>
+      <thead><tr>
+        <th>ID</th>
+        <th>Proveedor</th>
+        <th>País</th>
+        <th>Moneda</th>
+        <th>Total</th>
+        <th>Pagado</th>
+        <th>Saldo</th>
+        <th>Vencimiento</th>
+        <th>Días</th>
+        <th>Estado</th>
+        <th>Acciones</th>
+      </tr></thead><tbody>`;
+
+    facturas.forEach(f => {
+      const colorEstado = getColorEstado(f.estado);
+      const diasLabel   = getDiasLabel(f.dias);
+      html += `<tr>
+        <td>${f.id}</td>
+        <td>${f.proveedor}</td>
+        <td>${f.pais}</td>
+        <td>${f.moneda}</td>
+        <td>${formatMonto(f.montoTotal, f.moneda)}</td>
+        <td>${formatMonto(f.montoPagado, f.moneda)}</td>
+        <td>${formatMonto(f.saldo, f.moneda)}</td>
+        <td>${f.fechaVence}</td>
+        <td style="color:${f.dias < 0 ? '#d93025' : '#333'}">${diasLabel}</td>
+        <td><span class="badge ${colorEstado}">${f.estado}</span></td>
+        <td>
+          ${f.estado !== 'Pagada' ? `<button class="btn-sm" onclick="abrirModalPago('${f.id}', ${f.saldo}, '${f.moneda}')">Pagar</button>` : ''}
+        </td>
+      </tr>`;
+    });
+
+    html += '</tbody></table>';
+    document.getElementById('tabla-container').innerHTML = html;
+  }
+
+  // ------------------------------------------------------------
+  // Filtros
+  // ------------------------------------------------------------
+  function aplicarFiltros() {
+    const pais      = document.getElementById('f-pais').value;
+    const proveedor = document.getElementById('f-proveedor').value;
+    const moneda    = document.getElementById('f-moneda').value;
+    const desde     = document.getElementById('f-desde').value;
+    const hasta     = document.getElementById('f-hasta').value;
+
+    const filtradas = todasLasFacturas.filter(f => {
+      if (pais      && f.pais      !== pais)      return false;
+      if (proveedor && f.proveedor !== proveedor)  return false;
+      if (moneda    && f.moneda    !== moneda)     return false;
+      return true;
+    });
+
+    renderTabla(filtradas);
+  }
+
+  function limpiarFiltros() {
+    ['f-pais','f-proveedor','f-moneda','f-desde','f-hasta'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    renderTabla(todasLasFacturas);
+  }
+
+  // ------------------------------------------------------------
+  // Modal nueva factura
+  // ------------------------------------------------------------
+  function abrirModalFactura() {
+    document.getElementById('modal-factura').style.display = 'flex';
+  }
+
+  function guardarFactura() {
+    const data = {
+      proveedor    : document.getElementById('nf-proveedor').value,
+      pais         : document.getElementById('nf-pais').value,
+      moneda       : document.getElementById('nf-moneda').value,
+      montoTotal   : document.getElementById('nf-monto').value,
+      fechaEmision : document.getElementById('nf-emision').value,
+      fechaVence   : document.getElementById('nf-vence').value,
+      notas        : document.getElementById('nf-notas').value
+    };
+
+    if (!data.proveedor || !data.montoTotal || !data.fechaVence) {
+      document.getElementById('nf-error').style.display = 'block';
+      document.getElementById('nf-error').textContent = 'Completá los campos requeridos.';
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(() => {
+        cerrarModal('modal-factura');
+        cargarFacturas();
+      })
+      .crearFactura(data);
+  }
+
+  // ------------------------------------------------------------
+  // Modal pago
+  // ------------------------------------------------------------
+  function abrirModalPago(id, saldo, moneda) {
+    facturaSeleccionada = id;
+    document.getElementById('pago-info').textContent = `Factura ${id} — Saldo pendiente: ${formatMonto(saldo, moneda)}`;
+    document.getElementById('pago-monto').value = '';
+    document.getElementById('pago-fecha').value = new Date().toISOString().split('T')[0];
+    document.getElementById('modal-pago').style.display = 'flex';
+  }
+
+  function confirmarPago() {
+    const monto = document.getElementById('pago-monto').value;
+    const fecha = document.getElementById('pago-fecha').value;
+    if (!monto || !fecha) return;
+
+    google.script.run
+      .withSuccessHandler(() => {
+        cerrarModal('modal-pago');
+        cargarFacturas();
+      })
+      .registrarPago(facturaSeleccionada, monto, fecha);
+  }
+
+  // ------------------------------------------------------------
+  // Helpers
+  // ------------------------------------------------------------
+  function cerrarModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  function formatMonto(monto, moneda) {
+    const simbolos = { USD: '$', CRC: '₡', PAB: 'B/.' };
+    const s = simbolos[moneda] || '';
+    return s + parseFloat(monto || 0).toLocaleString('es-CR', { minimumFractionDigits: 2 });
+  }
+
+  function getDiasLabel(dias) {
+    if (dias === null || dias === undefined) return '';
+    if (dias < 0)  return `Vencida hace ${Math.abs(dias)}d`;
+    if (dias === 0) return 'Vence hoy';
+    return `Vence en ${dias}d`;
+  }
+
+  function getColorEstado(estado) {
+    const map = { 'Pagada': 'success', 'Pendiente': 'warning', 'Vencida': 'danger', 'Parcial': 'info' };
+    return map[estado] || 'secondary';
+  }
+</script>
